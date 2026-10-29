@@ -43,13 +43,29 @@ function plainName(value: unknown): value is string {
     !/[<\[\]`*\\_\u0000-\u001f\u007f]/.test(value);
 }
 
+// Product metadata from Silo's published vault-manager configuration. These
+// aliases contain no contract IDs and never select, insert or filter a row.
+// Every tag address, source name and asset comes from the Graph response.
+const PRODUCT_MANAGER: Readonly<Record<string, string>> = {
+  "yield optimized sonic": "Goat",
+  "yield optimized usdc": "Goat",
+  "mithras": "Travee",
+  "abrc": "YieldFi",
+  "mainstreet liquidity vault": "Braindead",
+};
+function officialName(value: unknown): string {
+  if (typeof value !== "string" || [...value].length > 2048 || value.trim() && !plainName(value)) {
+    throw new Error("A nonempty Silo vault name cannot be safely preserved.");
+  }
+  return value.trim();
+}
 function toTag(module: Module): ContractTag {
   if (!address(module.id) || !address(module.vault?.id) || module.id === module.vault.id) {
     throw new Error("A Silo vault incentives module has invalid identity or vault metadata.");
   }
-  let name = plainName(module.vault.name)
-    ? `Silo Incentives ${module.vault.name.trim()}` : `Silo ${module.id}`;
-  if ([...name].length > 47) name = [...name].slice(0, 44).join("") + "...";
+  const sourceName = officialName(module.vault.name);
+  const alias = Object.hasOwn(PRODUCT_MANAGER, sourceName.toLowerCase()) ? PRODUCT_MANAGER[sourceName.toLowerCase()] : null;
+  const name = "VaultIncentivesModule " + module.id.slice(0, 14) + "..." + module.id.slice(-11);
   return {
     "Contract Address": `eip155:146:${module.id}`,
     "Public Name Tag": name,
@@ -57,7 +73,9 @@ function toTag(module: Module): ContractTag {
     "UI/Website Link": "https://app.silo.finance/",
     "Public Note": `Incentives module for legacy Silo managed vault ${module.vault.id}. ` +
       `Manages incentive claiming logic and reward notifications for this vault. ` +
-      `The parent vault is permissionlessly deployed.`,
+      `The parent vault is permissionlessly deployed. Protocol: Silo Finance. ` +
+      `Source vault name: ${sourceName || "(empty)"}.` +
+      (alias ? ` Official product manager: ${alias}.` : ""),
   };
 }
 
@@ -152,17 +170,11 @@ const service: ITagService = {
     });
     sameMeta(seal._meta, anchor);
 
-    const names = new Map<string, number>();
+    const names = new Set<string>();
     for (const tag of tags) {
-      const name = tag["Public Name Tag"].toLowerCase();
-      names.set(name, (names.get(name) ?? 0) + 1);
-    }
-    // Metadata collisions use the complete source address as the identifier.
-    // This retains every vault, without fabricated instance numbers or skips.
-    for (const tag of tags) {
-      if (names.get(tag["Public Name Tag"].toLowerCase()) !== 1) {
-        tag["Public Name Tag"] = "Silo " + tag["Contract Address"].split(":")[2];
-      }
+      const key = tag["Public Name Tag"].toLowerCase();
+      if (names.has(key)) throw new Error("Abbreviated incentives-module identities collide.");
+      names.add(key);
     }
     return tags;
   },
