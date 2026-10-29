@@ -42,7 +42,7 @@ function plainName(value: unknown): value is string {
 }
 
 function toTag(module: Module): ContractTag {
-  if (!address(module.id) || !address(module.module?.id) || module.id === module.vault.id) {
+  if (!address(module.id) || !address(module.vault?.id) || module.id === module.vault.id) {
     throw new Error("A Silo vault incentives module has invalid identity or vault metadata.");
   }
   let name = plainName(module.vault.name)
@@ -54,8 +54,8 @@ function toTag(module: Module): ContractTag {
     "Project Name": "Silo Finance",
     "UI/Website Link": "https://app.silo.finance/",
     "Public Note": `Incentives module for legacy Silo managed vault ${module.vault.id}. ` +
-      `Manages incentive-claiming logic and reward notifications for this vault. ` +
-      `Vault deployment is permissionless; this tag does not endorse its manager.`,
+      `Manages incentive claiming logic and reward notifications for this vault. ` +
+      `The parent vault is permissionlessly deployed.`,
   };
 }
 
@@ -104,11 +104,11 @@ const service: ITagService = {
       });
       sameMeta(data._meta, anchor);
       if (!Array.isArray(data.vaultIncentivesModules) || data.vaultIncentivesModules.length > PAGE_SIZE) {
-        throw new Error("The Silo managed-vault page is invalid.");
+        throw new Error("The Silo vault-incentives module page is invalid.");
       }
       for (const module of data.vaultIncentivesModules) {
         if (!address(module?.id) || (cursor !== null && module.id <= cursor)) {
-          throw new Error("Silo managed-vault IDs are repeated or not in cursor order.");
+          throw new Error("Silo vault-incentives module IDs are repeated or not in cursor order.");
         }
         tags.push(toTag(module));
         cursor = module.id;
@@ -116,7 +116,7 @@ const service: ITagService = {
       if (data.vaultIncentivesModules.length < PAGE_SIZE) { complete = true; break; }
     }
     // A resource limit throws; it never returns a truncated contract set.
-    if (!complete) throw new Error("Silo managed-vault pagination did not finish.");
+    if (!complete) throw new Error("Silo vault-incentives module pagination did not finish.");
     const seal = await query<{ _meta: Meta }>({
       query: "query Seal($block:Block_height!){_meta(block:$block){deployment hasIndexingErrors block{number hash}}}",
       variables: { block },
