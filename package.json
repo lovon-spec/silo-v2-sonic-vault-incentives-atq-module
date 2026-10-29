@@ -1,0 +1,14 @@
+{
+  "name": "silo-v2-sonic-vault-incentives-atq-module",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "license": "MIT",
+  "dependencies": {
+    "atq-types": "^1.1.5"
+  },
+  "scripts": {
+    "build": "tsc"
+  }
+}
