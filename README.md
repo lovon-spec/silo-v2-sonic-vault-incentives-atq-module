@@ -28,3 +28,5 @@ Every VaultIncentivesModule row is retrieved at one pinned block hash through an
 Names combine a protocol/role prefix with the published parent-vault name. Empty or unsafe name metadata uses the full emitted module address. Long names use ellipsis; collisions use the full module address. Notes identify the parent vault and contract role. The protocol UI link and project name identify the contract system, without endorsing a permissionless manager.
 
 Use Yarn and yarn build. All logic is in src/main.mts, exporting only async returnTags with two string arguments. MIT licensed, derived from our own original module.
+
+Each query, including pacing and the response-body read, has a 30-second deadline. The complete run has a ten-minute deadline. A deadline throws without returning a partial set; native fetch cancellation is requested, and the local race also bounds fetch implementations that ignore cancellation. Use yarn build and yarn test.

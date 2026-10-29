@@ -4,6 +4,8 @@ const DEPLOYMENT = "QmQUcPAEpUQJL3AYK21hsgNnj6XmWepTXJXySHdFXMmp7p";
 const ENDPOINT = `https://gateway.thegraph.com/api/deployments/id/${DEPLOYMENT}`;
 const PAGE_SIZE = 1000;
 const MAX_PAGES = 1000;
+const QUERY_TIMEOUT_MS = 30_000;
+const RUN_TIMEOUT_MS = 600_000;
 
 type Meta = {
   deployment: string;
@@ -66,22 +68,49 @@ const service: ITagService = {
       throw new Error("A query-service API key must be supplied.");
     }
     let requests = 0;
+    const deadline = Date.now() + RUN_TIMEOUT_MS;
     async function query<T>(request: { query: string; variables?: object }): Promise<T> {
-      if (++requests > MAX_PAGES + 2) throw new Error("Silo V2 query limit reached.");
-      if (requests > 1) await new Promise<void>(resolve => setTimeout(resolve, 2000));
-      const response = await fetch(ENDPOINT, {
-        method: "POST",
-        redirect: "error",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify(request),
-      });
-      if (!response.ok) throw new Error(`Silo V2 query failed with HTTP ${response.status}.`);
-      const result = await response.json() as { data?: T; errors?: unknown };
-      if (!result.data || (result.errors !== undefined &&
-          (!Array.isArray(result.errors) || result.errors.length > 0))) {
-        throw new Error("The Silo V2 query did not return complete data.");
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error("Silo V2 execution deadline reached.");
+      const waitMs = Math.min(QUERY_TIMEOUT_MS, remaining);
+      const queryDeadline = Date.now() + waitMs;
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          (async () => {
+            if (++requests > MAX_PAGES + 2) throw new Error("Silo V2 query limit reached.");
+            if (requests > 1) await new Promise<void>(resolve => setTimeout(resolve, 2000));
+            if (controller.signal.aborted || Date.now() >= queryDeadline) {
+              throw new Error("Silo V2 query deadline reached.");
+            }
+            const response = await fetch(ENDPOINT, {
+              method: "POST",
+              redirect: "error",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+              body: JSON.stringify(request),
+              signal: controller.signal,
+            });
+            if (!response.ok) throw new Error(`Silo V2 query failed with HTTP ${response.status}.`);
+            const result = await response.json() as { data?: T; errors?: unknown };
+            if (Date.now() >= queryDeadline) throw new Error("Silo V2 query deadline reached.");
+            if (!result.data || (result.errors !== undefined &&
+                (!Array.isArray(result.errors) || result.errors.length > 0))) {
+              throw new Error("The Silo V2 query did not return complete data.");
+            }
+            return result.data;
+          })(),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              controller.abort();
+              reject(new Error("Silo V2 query deadline reached."));
+            }, waitMs);
+          }),
+        ]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+        controller.abort();
       }
-      return result.data;
     }
 
     const anchor = checkedMeta((await query<{ _meta: Meta }>({
